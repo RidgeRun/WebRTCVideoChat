@@ -11,16 +11,28 @@
 #import <Foundation/Foundation.h>
 
 #import <WebRTC/RTCMacros.h>
-
-@class RTCVideoFrame;
+#import <WebRTC/RTCVideoFrame.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
+RTC_EXPORT extern NSString *const kRTCVideoCodecVp8Name;
+RTC_EXPORT extern NSString *const kRTCVideoCodecVp9Name;
+RTC_EXPORT extern NSString *const kRTCVideoCodecH264Name;
+RTC_EXPORT extern NSString *const kRTCLevel31ConstrainedHigh;
+RTC_EXPORT extern NSString *const kRTCLevel31ConstrainedBaseline;
+
 /** Represents an encoded frame's type. */
 typedef NS_ENUM(NSUInteger, RTCFrameType) {
-  RTCFrameTypeEmptyFrame,
-  RTCFrameTypeVideoFrameKey,
-  RTCFrameTypeVideoFrameDelta,
+  RTCFrameTypeEmptyFrame = 0,
+  RTCFrameTypeAudioFrameSpeech = 1,
+  RTCFrameTypeAudioFrameCN = 2,
+  RTCFrameTypeVideoFrameKey = 3,
+  RTCFrameTypeVideoFrameDelta = 4,
+};
+
+typedef NS_ENUM(NSUInteger, RTCVideoContentType) {
+  RTCVideoContentTypeUnspecified,
+  RTCVideoContentTypeScreenshare,
 };
 
 /** Represents an encoded frame. Corresponds to webrtc::EncodedImage. */
@@ -28,18 +40,19 @@ RTC_EXPORT
 @interface RTCEncodedImage : NSObject
 
 @property(nonatomic, strong) NSData *buffer;
-@property(nonatomic, assign) int encodedWidth;
-@property(nonatomic, assign) int encodedHeight;
+@property(nonatomic, assign) int32_t encodedWidth;
+@property(nonatomic, assign) int32_t encodedHeight;
 @property(nonatomic, assign) uint32_t timeStamp;
-@property(nonatomic, assign) long captureTimeMs;
-@property(nonatomic, assign) long ntpTimeMs;
-@property(nonatomic, assign) BOOL isTimingFrame;
-@property(nonatomic, assign) long encodeStartMs;
-@property(nonatomic, assign) long encodeFinishMs;
+@property(nonatomic, assign) int64_t captureTimeMs;
+@property(nonatomic, assign) int64_t ntpTimeMs;
+@property(nonatomic, assign) uint8_t flags;
+@property(nonatomic, assign) int64_t encodeStartMs;
+@property(nonatomic, assign) int64_t encodeFinishMs;
 @property(nonatomic, assign) RTCFrameType frameType;
-@property(nonatomic, assign) int rotation;
+@property(nonatomic, assign) RTCVideoRotation rotation;
 @property(nonatomic, assign) BOOL completeFrame;
-@property(nonatomic, retain) NSNumber *qp;
+@property(nonatomic, strong) NSNumber *qp;
+@property(nonatomic, assign) RTCVideoContentType contentType;
 
 @end
 
@@ -63,22 +76,32 @@ RTC_EXPORT
 @end
 
 /** Callback block for encoder. */
-typedef void (^RTCVideoEncoderCallback)(RTCEncodedImage *frame,
+typedef BOOL (^RTCVideoEncoderCallback)(RTCEncodedImage *frame,
                                         id<RTCCodecSpecificInfo> info,
                                         RTCRtpFragmentationHeader *header);
 
 /** Callback block for decoder. */
 typedef void (^RTCVideoDecoderCallback)(RTCVideoFrame *frame);
 
+typedef NS_ENUM(NSUInteger, RTCVideoCodecMode) {
+  RTCVideoCodecModeRealtimeVideo,
+  RTCVideoCodecModeScreensharing,
+};
+
 /** Holds information to identify a codec. Corresponds to cricket::VideoCodec. */
 RTC_EXPORT
-@interface RTCVideoCodecInfo : NSObject
+@interface RTCVideoCodecInfo : NSObject <NSCoding>
 
-- (instancetype)initWithPayload:(NSInteger)payload
-                           name:(NSString *)name
-                     parameters:(NSDictionary<NSString *, NSString *> *)parameters;
+- (instancetype)init NS_UNAVAILABLE;
 
-@property(nonatomic, readonly) NSInteger payload;
+- (instancetype)initWithName:(NSString *)name;
+
+- (instancetype)initWithName:(NSString *)name
+                  parameters:(nullable NSDictionary<NSString *, NSString *> *)parameters
+    NS_DESIGNATED_INITIALIZER;
+
+- (BOOL)isEqualToCodecInfo:(RTCVideoCodecInfo *)info;
+
 @property(nonatomic, readonly) NSString *name;
 @property(nonatomic, readonly) NSDictionary<NSString *, NSString *> *parameters;
 
@@ -88,7 +111,7 @@ RTC_EXPORT
 RTC_EXPORT
 @interface RTCVideoEncoderSettings : NSObject
 
-@property(nonatomic, retain) NSString *name;
+@property(nonatomic, strong) NSString *name;
 
 @property(nonatomic, assign) unsigned short width;
 @property(nonatomic, assign) unsigned short height;
@@ -101,6 +124,18 @@ RTC_EXPORT
 @property(nonatomic, assign) uint32_t maxFramerate;
 
 @property(nonatomic, assign) unsigned int qpMax;
+@property(nonatomic, assign) RTCVideoCodecMode mode;
+
+@end
+
+/** QP thresholds for encoder. Corresponds to webrtc::VideoEncoder::QpThresholds. */
+RTC_EXPORT
+@interface RTCVideoEncoderQpThresholds : NSObject
+
+- (instancetype)initWithThresholdsLow:(NSInteger)low high:(NSInteger)high;
+
+@property(nonatomic, readonly) NSInteger low;
+@property(nonatomic, readonly) NSInteger high;
 
 @end
 
@@ -112,11 +147,16 @@ RTC_EXPORT
 - (NSInteger)startEncodeWithSettings:(RTCVideoEncoderSettings *)settings
                        numberOfCores:(int)numberOfCores;
 - (NSInteger)releaseEncoder;
-- (void)destroy;
 - (NSInteger)encode:(RTCVideoFrame *)frame
     codecSpecificInfo:(id<RTCCodecSpecificInfo>)info
            frameTypes:(NSArray<NSNumber *> *)frameTypes;
-- (BOOL)setBitrate:(uint32_t)bitrateKbit framerate:(uint32_t)framerate;
+- (int)setBitrate:(uint32_t)bitrateKbit framerate:(uint32_t)framerate;
+- (NSString *)implementationName;
+
+/** Returns QP scaling settings for encoder. The quality scaler adjusts the resolution in order to
+ *  keep the QP from the encoded images within the given range. Returning nil from this function
+ *  disables quality scaling. */
+- (RTCVideoEncoderQpThresholds *)scalingSettings;
 
 @end
 
@@ -128,12 +168,12 @@ RTC_EXPORT
 - (NSInteger)startDecodeWithSettings:(RTCVideoEncoderSettings *)settings
                        numberOfCores:(int)numberOfCores;
 - (NSInteger)releaseDecoder;
-- (void)destroy;
 - (NSInteger)decode:(RTCEncodedImage *)encodedImage
           missingFrames:(BOOL)missingFrames
     fragmentationHeader:(RTCRtpFragmentationHeader *)fragmentationHeader
       codecSpecificInfo:(__nullable id<RTCCodecSpecificInfo>)info
            renderTimeMs:(int64_t)renderTimeMs;
+- (NSString *)implementationName;
 
 @end
 
