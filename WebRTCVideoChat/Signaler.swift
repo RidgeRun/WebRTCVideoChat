@@ -36,8 +36,8 @@ class Signaler: NSObject, PNObjectEventListener {
     var pubnub: PubNub?
     weak var delegate: SignalingDelegate?
     let channel = "439"
-    let publishKey = "<insert key here>"
-    let subscribeKey = "<insert key here>"
+    let publishKey = "pub-c-561a7378-fa06-4c50-a331-5c0056d0163c"
+    let subscribeKey = "sub-c-17b7db8a-3915-11e4-9868-02ee2ddab7fe"
     var uuid: String?
     var number: String?
     
@@ -46,7 +46,7 @@ class Signaler: NSObject, PNObjectEventListener {
         let config = PNConfiguration(publishKey: publishKey, subscribeKey: subscribeKey)
         self.pubnub = PubNub.clientWithConfiguration(config)
         self.pubnub?.addListener(self)
-        self.pubnub?.subscribeToChannels([channel], withPresence: false)
+        self.pubnub?.subscribeToChannels(["321"], withPresence: false)
     }
     
     func sendOffer(_ sdp: String) {
