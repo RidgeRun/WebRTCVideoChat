@@ -22,7 +22,7 @@ class WebRTCClient: NSObject, SignalingDelegate, RTCPeerConnectionDelegate {
     
     let factory = RTCPeerConnectionFactory()
     var peerConnection: RTCPeerConnection!
-    let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: [kRTCMediaConstraintsOfferToReceiveAudio: kRTCMediaConstraintsValueFalse, kRTCMediaConstraintsOfferToReceiveVideo : kRTCMediaConstraintsValueTrue])
+    let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: [kRTCMediaConstraintsOfferToReceiveAudio: kRTCMediaConstraintsValueTrue, kRTCMediaConstraintsOfferToReceiveVideo : kRTCMediaConstraintsValueTrue])
     let stunServer = RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])
     
     var outboundStream: RTCMediaStream!
@@ -55,6 +55,7 @@ class WebRTCClient: NSObject, SignalingDelegate, RTCPeerConnectionDelegate {
         if self.peerConnection == nil {
             let config = RTCConfiguration()
             config.iceServers = [stunServer]
+            config.bundlePolicy = .maxCompat
             self.peerConnection = self.factory.peerConnection(with: config, constraints: self.constraints, delegate: self)
             print("Peer connection created")
             
@@ -64,9 +65,9 @@ class WebRTCClient: NSObject, SignalingDelegate, RTCPeerConnectionDelegate {
             let videoSource = self.factory.avFoundationVideoSource(with: self.constraints)
             let videoTrack = self.factory.videoTrack(with: videoSource, trackId: "video")
             self.outboundStream.addVideoTrack(videoTrack)
-            //let audioSource = self.factory.audioSource(with: self.constraints)
-            //let audioTrack = self.factory.audioTrack(with: audioSource, trackId: "audio")
-            //self.outboundStream.addAudioTrack(audioTrack)
+            let audioSource = self.factory.audioSource(with: self.constraints)
+            let audioTrack = self.factory.audioTrack(with: audioSource, trackId: "audio")
+            self.outboundStream.addAudioTrack(audioTrack)
             self.peerConnection.add(self.outboundStream)
             
             self.delegate?.webRTCClientDidAddLocal(videoTrack: videoTrack)
